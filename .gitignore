@@ -1,0 +1,37 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Environment variables & secrets
+.env
+.streamlit/secrets.toml
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Candidate personal data from assignment (Strictly confidential)
+RSG_Vasavi_College_-_Short_listed_Data.xlsx
+
+# Logs
+*.log
+logs/
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.swp
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
