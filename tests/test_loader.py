@@ -46,19 +46,55 @@ def test_official_csv_source_values_unaltered(temp_db_path: Path):
         assert row33["is_included"] == 0
         assert row33["exclusion_reason"] == EXCLUSION_RETURNED
 
-        # Check TXN0034 (Quantity = 0)
-        cursor.execute("SELECT quantity, is_included, exclusion_reason FROM sales WHERE transaction_id = 'TXN0034'")
+        # Check TXN0034 (Quantity = 0, preserves unit_price 900.0 and discount 0)
+        cursor.execute("SELECT quantity, unit_price, discount_amount, is_included, exclusion_reason FROM sales WHERE transaction_id = 'TXN0034'")
         row34 = cursor.fetchone()
+        assert row34["quantity"] == 0
+        assert row34["unit_price"] == 900.0
+        assert row34["discount_amount"] == 0
+        assert row34["is_included"] == 0
+        assert row34["exclusion_reason"] == EXCLUSION_ZERO_QUANTITY
+
+        # Check TXN0051 (Missing Unit_price - remains NULL/None, preserves discount 0)
+        cursor.execute("SELECT quantity, unit_price, discount_amount, is_included, exclusion_reason FROM sales WHERE transaction_id = 'TXN0051'")
+        row51 = cursor.fetchone()
+        assert row51["unit_price"] is None
+        assert row51["discount_amount"] == 0
+        assert row51["is_included"] == 0
+        assert row51["exclusion_reason"] == EXCLUSION_MISSING_PRICE
+
+
+def test_excluded_rows_keep_parseable_source_values(temp_db_path: Path):
+    """Assert that TXN0034 keeps unit_price 900.0 and discount 0, and TXN0051 keeps discount 0 with unit_price NULL."""
+    load_csv_data(csv_path=CSV_DATA_PATH, db_path=temp_db_path)
+
+    with get_readonly_connection(temp_db_path) as conn:
+        cursor = conn.cursor()
+
+        # TXN0034: Zero quantity failure, but keeps unit_price 900.0 and discount 0
+        cursor.execute(
+            "SELECT unit_price, discount_amount, quantity, is_included, exclusion_reason "
+            "FROM sales WHERE transaction_id = 'TXN0034'"
+        )
+        row34 = cursor.fetchone()
+        assert row34["unit_price"] == 900.0
+        assert row34["discount_amount"] == 0
         assert row34["quantity"] == 0
         assert row34["is_included"] == 0
         assert row34["exclusion_reason"] == EXCLUSION_ZERO_QUANTITY
 
-        # Check TXN0051 (Missing Unit_price - must remain NULL/None, never imputed)
-        cursor.execute("SELECT unit_price, is_included, exclusion_reason FROM sales WHERE transaction_id = 'TXN0051'")
+        # TXN0051: Missing unit_price (NULL), but keeps discount 0
+        cursor.execute(
+            "SELECT unit_price, discount_amount, quantity, is_included, exclusion_reason "
+            "FROM sales WHERE transaction_id = 'TXN0051'"
+        )
         row51 = cursor.fetchone()
         assert row51["unit_price"] is None
+        assert row51["discount_amount"] == 0
+        assert row51["quantity"] == 5
         assert row51["is_included"] == 0
         assert row51["exclusion_reason"] == EXCLUSION_MISSING_PRICE
+
 
 
 def test_loader_idempotence(temp_db_path: Path):

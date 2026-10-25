@@ -40,6 +40,9 @@ def compute_line_revenue(quantity: int, unit_price: float, discount_amount: floa
 def validate_and_parse_row(row: Dict[str, Any]) -> Tuple[bool, Optional[str], Dict[str, Any]]:
     """Validate a raw CSV row against the strict business rules.
     
+    Parses every field independently first so that raw source values (where parseable)
+    are always stored, and decides the exclusion reason afterwards using the same priority.
+    
     Returns:
         (is_included, exclusion_reason, parsed_data_dict)
     """
@@ -73,71 +76,95 @@ def validate_and_parse_row(row: Dict[str, Any]) -> Tuple[bool, Optional[str], Di
     }
 
     # 1. Date parsing
-    try:
-        dt = datetime.strptime(raw_date, DATE_FORMAT_SOURCE)
-        parsed["order_date"] = dt.strftime("%Y-%m-%d")
-        parsed["order_month"] = dt.strftime("%Y-%m")
-    except Exception:
+    date_valid = False
+    if raw_date:
+        try:
+            dt = datetime.strptime(raw_date, DATE_FORMAT_SOURCE)
+            parsed["order_date"] = dt.strftime("%Y-%m-%d")
+            parsed["order_month"] = dt.strftime("%Y-%m")
+            date_valid = True
+        except Exception:
+            pass
+
+    # 2. Status parsing
+    status_lower = raw_status.lower()
+    status_valid = (status_lower == STATUS_COMPLETED)
+
+    # 3. Quantity parsing
+    qty: Optional[int] = None
+    qty_parse_error = False
+    if raw_qty is None or str(raw_qty).strip() == "":
+        qty_parse_error = True
+    else:
+        try:
+            qty = int(raw_qty)
+            parsed["quantity"] = qty
+        except (ValueError, TypeError):
+            qty_parse_error = True
+
+    # 4. Unit price parsing
+    price: Optional[float] = None
+    price_parse_error = False
+    if raw_price is None or str(raw_price).strip() == "":
+        price_parse_error = True
+    else:
+        try:
+            price = float(raw_price)
+            parsed["unit_price"] = price
+        except (ValueError, TypeError):
+            price_parse_error = True
+
+    # 5. Discount parsing
+    disc: Optional[float] = None
+    disc_parse_error = False
+    if raw_discount is None or str(raw_discount).strip() == "":
+        disc = 0.0
+        parsed["discount_amount"] = 0.0
+    else:
+        try:
+            disc = float(raw_discount)
+            parsed["discount_amount"] = disc
+        except (ValueError, TypeError):
+            disc_parse_error = True
+
+    # --- Exclusion Reason Decision (Preserving Existing Priority) ---
+
+    # Priority 1: Date validation
+    if not date_valid:
         parsed["exclusion_reason"] = EXCLUSION_INVALID_DATE
         return False, EXCLUSION_INVALID_DATE, parsed
 
-    # 2. Status validation
-    status_lower = raw_status.lower()
-    if status_lower != STATUS_COMPLETED:
+    # Priority 2: Status validation
+    if not status_valid:
         reason = EXCLUSION_RETURNED if status_lower == STATUS_RETURNED else f"{EXCLUSION_INVALID_STATUS}_{status_lower}"
         parsed["exclusion_reason"] = reason
-        # Parse numbers if possible for auditability
-        try:
-            parsed["quantity"] = int(raw_qty) if raw_qty != "" else None
-            parsed["unit_price"] = float(raw_price) if raw_price != "" else None
-            parsed["discount_amount"] = float(raw_discount) if raw_discount != "" else None
-        except Exception:
-            pass
         return False, reason, parsed
 
-    # 3. Quantity validation
-    try:
-        if raw_qty is None or str(raw_qty).strip() == "":
-            parsed["exclusion_reason"] = EXCLUSION_INVALID_QUANTITY
-            return False, EXCLUSION_INVALID_QUANTITY, parsed
-        qty = int(raw_qty)
-        parsed["quantity"] = qty
-        if qty == 0:
-            parsed["exclusion_reason"] = EXCLUSION_ZERO_QUANTITY
-            return False, EXCLUSION_ZERO_QUANTITY, parsed
-        if qty < 0:
-            parsed["exclusion_reason"] = EXCLUSION_INVALID_QUANTITY
-            return False, EXCLUSION_INVALID_QUANTITY, parsed
-    except ValueError:
+    # Priority 3: Quantity validation
+    if qty_parse_error or qty is None:
+        parsed["exclusion_reason"] = EXCLUSION_INVALID_QUANTITY
+        return False, EXCLUSION_INVALID_QUANTITY, parsed
+    if qty == 0:
+        parsed["exclusion_reason"] = EXCLUSION_ZERO_QUANTITY
+        return False, EXCLUSION_ZERO_QUANTITY, parsed
+    if qty < 0:
         parsed["exclusion_reason"] = EXCLUSION_INVALID_QUANTITY
         return False, EXCLUSION_INVALID_QUANTITY, parsed
 
-    # 4. Unit price validation (never impute missing price)
-    try:
-        if raw_price is None or str(raw_price).strip() == "":
-            parsed["exclusion_reason"] = EXCLUSION_MISSING_PRICE
-            return False, EXCLUSION_MISSING_PRICE, parsed
-        price = float(raw_price)
-        parsed["unit_price"] = price
-        if price < 0:
-            parsed["exclusion_reason"] = EXCLUSION_NEGATIVE_PRICE
-            return False, EXCLUSION_NEGATIVE_PRICE, parsed
-    except ValueError:
+    # Priority 4: Unit price validation (never impute missing price)
+    if price_parse_error or price is None:
         parsed["exclusion_reason"] = EXCLUSION_MISSING_PRICE
         return False, EXCLUSION_MISSING_PRICE, parsed
+    if price < 0:
+        parsed["exclusion_reason"] = EXCLUSION_NEGATIVE_PRICE
+        return False, EXCLUSION_NEGATIVE_PRICE, parsed
 
-    # 5. Discount validation
-    try:
-        if raw_discount is None or str(raw_discount).strip() == "":
-            disc = 0.0
-        else:
-            disc = float(raw_discount)
-        parsed["discount_amount"] = disc
-        gross_total = qty * price
-        if disc < 0 or disc > gross_total:
-            parsed["exclusion_reason"] = EXCLUSION_INVALID_DISCOUNT
-            return False, EXCLUSION_INVALID_DISCOUNT, parsed
-    except ValueError:
+    # Priority 5: Discount validation
+    if disc_parse_error or disc is None:
+        parsed["exclusion_reason"] = EXCLUSION_INVALID_DISCOUNT
+        return False, EXCLUSION_INVALID_DISCOUNT, parsed
+    gross_total = qty * price
+    if disc < 0 or disc > gross_total:
         parsed["exclusion_reason"] = EXCLUSION_INVALID_DISCOUNT
         return False, EXCLUSION_INVALID_DISCOUNT, parsed
 
@@ -146,3 +173,4 @@ def validate_and_parse_row(row: Dict[str, Any]) -> Tuple[bool, Optional[str], Di
     parsed["is_included"] = True
     parsed["exclusion_reason"] = None
     return True, None, parsed
+
