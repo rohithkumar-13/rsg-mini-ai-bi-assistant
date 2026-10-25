@@ -88,7 +88,7 @@ During this build, I encountered four real technical issues. Here is the honest 
 ### What Works:
 1. **Official Data Loading & Audit**: Exactly 51 rows processed, 48 included, 3 excluded with clear audit reasons (`returned`, `zero_quantity`, `missing_unit_price`). Original rows are stored intact.
 2. **All 5 Business Questions**: All 5 queries return 100% correct, verified benchmark figures.
-3. **Dual Interpretation**: Seamless offline operation via regex/synonym engine; fully validated Gemini integration when configured.
+3. **Dual Interpretation**: Seamless offline operation via regex/synonym engine (the verified path); optional Gemini integration, tested with mocked responses only.
 4. **SQL Security Guard**: Complete defense-in-depth preventing SQL injection, mutation queries, comments, and stacked statements.
 5. **FastAPI & Streamlit UI**: Both services run concurrently and communicate smoothly over HTTP.
 6. **Automated Test Suite**: 61/61 tests passing.
